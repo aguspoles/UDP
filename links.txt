@@ -1,0 +1,5 @@
+winsock tutorial
+https://www.binarytides.com/winsock-socket-programming-tutorial/
+
+winsock api:
+https://docs.microsoft.com/es-es/windows/desktop/api/winsock2/nf-winsock2-socket

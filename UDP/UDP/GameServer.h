@@ -15,7 +15,8 @@
 
 #define BUFLEN 1024  //Max length of buffer
 #define PORT 8888   //The port on which to listen for incoming data
-enum class MSGCODE : int32_t { LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move };
+
+enum class MSGCODE : int32_t { LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move, Restart };
 
 struct Message {
 	Message()
@@ -44,20 +45,21 @@ private:
 	void SendWaitForYouTurn(std::string status, TicTacToe* game);
 	void SendInvalidMove(std::string status, TicTacToe* game);
 	void SendIsYourTurn(TicTacToe* game);
+	void SendRestart(TicTacToe* game);
 
 	//ReciveMessages
 	void LogInPlayer();
 	void ClientLogged(Message m);
 	void Chat(Message m);
 	void Move(Message m);
+	void ReciveRestart(Message m);
 
 	SOCKET s;
 	struct sockaddr_in server, si_other;
-	std::vector<struct sockaddr_in> players;
 	std::vector<int> playersPorts;
 	std::vector<TicTacToe> games;
+	std::vector<struct sockaddr_in> playersWaiting;
 	int slen, recv_len;
-	char buf[BUFLEN];
 
 	friend class TicTacToe;
 };

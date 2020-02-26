@@ -88,6 +88,11 @@ void GameServer::ReciveMessage(Message m)
 		Move(m);
 		return;
 	}
+	if (m.code == MSGCODE::Restart)
+	{
+		ReciveRestart(m);
+		return;
+	}
 }
 
 void GameServer::StartGame()
@@ -96,19 +101,31 @@ void GameServer::StartGame()
 	{
 		if (var.player1.sin_port == si_other.sin_port || var.player2.sin_port == si_other.sin_port)
 		{
+			var.restarted = false;
 			var.initialise();
+
 			Message msg;
+			Message msg2;
 			msg.code = MSGCODE::StartingGame;
-			memcpy(msg.message, "Starting...", sizeof("Starting..."));
+			msg2.code = MSGCODE::StartingGame;
+			std::stringstream ss;
+			ss << "Starting...\n\nYour opponent is " << games.back().player1Name;
+			memcpy(msg.message, ss.str().c_str(), sizeof(ss));
+			std::stringstream ss2;
+			ss2 << "Starting...\n\nYour opponent is " << games.back().player2Name;
+			memcpy(msg2.message, ss2.str().c_str(), sizeof(ss2));
 			for (size_t i = 0; i < 3; i++)
 			{
 				for (size_t j = 0; j < 3; j++)
 				{
 					msg.board[i][j] = games.back().board[i][j];
+					msg2.board[i][j] = games.back().board[i][j];
 				}
 			}
-			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player1, slen);
+
 			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player2, slen);
+			sendto(s, (char*)& msg2, sizeof(Message), 0, (struct sockaddr*) & games.back().player1, slen);
+
 			SendIsYourTurn(&var);
 			break;
 		}
@@ -155,6 +172,8 @@ void GameServer::SendEndGameStatus(std::string status, TicTacToe* game)
 	}
 	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
 	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+
+	SendRestart(game);
 }
 
 void GameServer::SendWaitForYouTurn(std::string status, TicTacToe* game)
@@ -195,11 +214,20 @@ void GameServer::SendIsYourTurn(TicTacToe* game)
 	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
 }
 
+void GameServer::SendRestart(TicTacToe* game)
+{
+	Message msg;
+	msg.code = MSGCODE::Restart;
+	std::string text = "Do you want to play again? press y/n for yes/no";
+	memcpy(msg.message, text.c_str(), sizeof(text));
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+}
+
 void GameServer::LogInPlayer()
 {
 	if (std::find(playersPorts.begin(), playersPorts.end(), si_other.sin_port) != playersPorts.end())
 		return;
-	players.push_back(si_other);
 	playersPorts.push_back(si_other.sin_port);
 
 	Message reply;
@@ -221,8 +249,9 @@ void GameServer::ClientLogged(Message m)
 		games.push_back(game);
 	}
 	else
-	{
-		if (games.back().readyToplay)
+	{ 
+		//If the last game is reday, i create one
+		if (games.back().readyToplay())
 		{
 			TicTacToe game;
 			game.SetServer(this);
@@ -234,7 +263,6 @@ void GameServer::ClientLogged(Message m)
 		{
 			games.back().player2 = si_other;
 			games.back().player2Name = m.message;
-			games.back().readyToplay = true;
 			StartGame();
 		}
 	}
@@ -271,6 +299,77 @@ void GameServer::Move(Message m)
 		{
 			var.playTicTacToe(PLAYER2, m.move);
 			break;
+		}
+	}
+}
+
+void GameServer::ReciveRestart(Message m)
+{
+	TicTacToe* gameToRestart = nullptr;
+	for (TicTacToe& var : games)
+	{
+		if (var.player1.sin_port == si_other.sin_port || var.player2.sin_port == si_other.sin_port)
+		{
+			gameToRestart = &var;
+			break;
+		}
+	}
+
+	if(gameToRestart && !gameToRestart->restarted)
+		gameToRestart->restart();
+
+	if (m.move == 0)
+	{
+		if (gameToRestart->player1.sin_port == si_other.sin_port)
+			gameToRestart->player1Name = gameToRestart->prevPlayer1Name;
+		else if (gameToRestart->player2.sin_port == si_other.sin_port)
+			gameToRestart->player2Name = gameToRestart->prevPlayer2Name;
+
+		if (gameToRestart->readyToplay())
+		{
+			StartGame();
+		}
+	}
+	else if(m.move == -1)
+	{
+		std::string prevPlayer1Name = gameToRestart->prevPlayer1Name;
+		std::string prevPlayer2Name = gameToRestart->prevPlayer2Name;
+		int player1Port = gameToRestart->player1.sin_port, player2Port = gameToRestart->player2.sin_port;
+
+		auto it = games.begin();
+		while (it != games.end())
+		{
+			if (it->player1.sin_port == gameToRestart->player1.sin_port)
+			{
+				it = games.erase(it);
+			}
+			else
+				++it;
+		}
+		auto it2 = playersPorts.begin();
+		while (it2 != playersPorts.end())
+		{
+			if (*it2 == si_other.sin_port)
+			{
+				it2 = playersPorts.erase(it2);
+			}
+			else
+				++it2;
+		}
+
+		if (player1Port == si_other.sin_port)
+		{
+			Message fakeMsg;
+			fakeMsg.code = MSGCODE::ClientLogged;
+			memcpy(fakeMsg.message, prevPlayer2Name.c_str(), sizeof(prevPlayer2Name));
+			ClientLogged(fakeMsg);
+		}
+		else if (player2Port == si_other.sin_port)
+		{
+			Message fakeMsg;
+			fakeMsg.code = MSGCODE::ClientLogged;
+			memcpy(fakeMsg.message, prevPlayer1Name.c_str(), sizeof(prevPlayer1Name));
+			ClientLogged(fakeMsg);
 		}
 	}
 }

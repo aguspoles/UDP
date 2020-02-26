@@ -13,5 +13,7 @@ public:
 
 	// A function to show the current board status 
 	void showBoard(char board[SIDE][SIDE]);
+
+	bool gameEnded = false;
 };
 

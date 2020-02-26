@@ -2,6 +2,10 @@
 #include "TicTacToe.h"
 #include "GameServer.h"
 
+TicTacToe::TicTacToe() : restarted(false)
+{
+}
+
 void TicTacToe::playTicTacToe(int whoseTurn, int moveIndex)
 {
 	if (currentTurn != whoseTurn)
@@ -55,7 +59,9 @@ void TicTacToe::playTicTacToe(int whoseTurn, int moveIndex)
 	// If the game has drawn 
 	if (gameOver(board) == false &&
 		totalMovesDone == SIDE * SIDE)
+	{
 		server->SendEndGameStatus("It's a draw", this);
+	}
 	else if(gameOver(board))
 	{
 		// Toggling the user to declare the actual 
@@ -69,6 +75,11 @@ void TicTacToe::playTicTacToe(int whoseTurn, int moveIndex)
 		declareWinner(whoseTurn);
 	}
 	return;
+}
+
+bool TicTacToe::readyToplay()
+{
+	return (player1Name != "INVALID" && player2Name != "INVALID");
 }
 
 void TicTacToe::initialise()
@@ -140,6 +151,17 @@ bool TicTacToe::gameOver(char board[][SIDE])
 {
 	return(rowCrossed(board) || columnCrossed(board)
 		|| diagonalCrossed(board));
+}
+
+void TicTacToe::restart()
+{
+	totalMovesDone = 0;
+	prevPlayer1Name = player1Name;
+	prevPlayer2Name = player2Name;
+	player1Name = player2Name = "INVALID";
+	restarted = true;
+	currentTurn = PLAYER1;
+	initialise();
 }
 
 bool TicTacToe::ValidMove(int move)

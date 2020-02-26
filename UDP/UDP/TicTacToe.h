@@ -26,9 +26,12 @@ class GameServer;
 class TicTacToe
 {
 public:
+	TicTacToe();
+
 	struct sockaddr_in player1, player2;
-	std::string player1Name, player2Name;
-	bool readyToplay = false;
+	std::string player1Name = "INVALID", player2Name = "INVALID";
+	std::string prevPlayer1Name = "INVALID", prevPlayer2Name = "INVALID";
+	bool restarted = false;
 	int currentTurn = PLAYER1;
 	// A 3*3 Tic-Tac-Toe board for playing  
 	char board[SIDE][SIDE];
@@ -37,6 +40,8 @@ public:
 	void SetServer(GameServer* server) { this->server = server; }
 
 	void playTicTacToe(int whoseTurn, int move);
+
+	bool readyToplay();
 
 	void initialise();
 
@@ -58,6 +63,8 @@ public:
 	// A function that returns true if the game is over 
 	// else it returns a false 
 	bool gameOver(char board[][SIDE]);
+
+	void restart();
 
 private:
 	bool ValidMove(int move);

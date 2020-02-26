@@ -16,10 +16,11 @@
 #define SERVER "127.0.0.1"  //ip address of udp server
 #define BUFLEN 1024  //Max length of buffer
 #define PORT 8888   //The port on which to listen for incoming data
+
 bool logged = false;
 std::string playerName;
 TicTacToe game;
-enum class MSGCODE : int32_t {LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move};
+enum class MSGCODE : int32_t {LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move, Restart };
 
 struct Message {
 	Message()
@@ -67,7 +68,8 @@ void RecvThread(SOCKET s, struct sockaddr_in si_other)
 		}
 		if (msg.code == MSGCODE::StartingGame)
 		{
-			printf("%s\n", msg.message);
+			printf("%s\n\n", msg.message);
+			game.gameEnded = false;
 			game.showBoard(msg.board);
 		}
 		if (msg.code == MSGCODE::Chat)
@@ -82,9 +84,14 @@ void RecvThread(SOCKET s, struct sockaddr_in si_other)
 		if (msg.code == MSGCODE::EndGameStatus)
 		{
 			game.showBoard(msg.board);
+			game.gameEnded = true;
 			printf("%s\n", msg.message);
 		}
 		if(msg.code == MSGCODE::Other)
+		{
+			printf("%s\n", msg.message);
+		}
+		if (msg.code == MSGCODE::Restart)
 		{
 			printf("%s\n", msg.message);
 		}
@@ -138,7 +145,7 @@ int main(void)
     //start communication
     while(1)
     {
-		if (logged)
+		if (logged && !game.gameEnded)
 		{
 			fflush(stdout);
 			memset(message, '\0', BUFLEN);
@@ -166,6 +173,29 @@ int main(void)
 				printf("sendto() failed with error code : %d", WSAGetLastError());
 					exit(EXIT_FAILURE);
 			}
+		}
+		else if (game.gameEnded)
+		{
+			fflush(stdout);
+			std::string restart;
+
+			std::getline(std::cin, restart);
+
+			if(restart == "y")
+			{
+				Message msg;
+				msg.code = MSGCODE::Restart;
+				msg.move = 0;
+				sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & si_other, slen);
+			}
+			else if (restart == "n")
+			{
+				Message msg;
+				msg.code = MSGCODE::Restart;
+				msg.move = -1;
+				sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & si_other, slen);
+			}
+
 		}
 
 	}

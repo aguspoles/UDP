@@ -14,19 +14,22 @@
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
  
 #define SERVER "127.0.0.1"  //ip address of udp server
-#define BUFLEN 512  //Max length of buffer
+#define BUFLEN 1024  //Max length of buffer
 #define PORT 8888   //The port on which to listen for incoming data
 bool logged = false;
 std::string playerName;
 TicTacToe game;
+enum class MSGCODE : int32_t {LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move};
 
 struct Message {
-	std::string code;
-	std::string message;
+	Message()
+	{
+		ZeroMemory(message, BUFLEN);
+	}
+	MSGCODE code;
+	char message[BUFLEN];
 	int move;
 	char board[3][3];
-	struct sockaddr_in from;
-	struct sockaddr_in to;
 };
 
 void RecvThread(SOCKET s, struct sockaddr_in si_other)
@@ -44,10 +47,10 @@ void RecvThread(SOCKET s, struct sockaddr_in si_other)
 		}
 
 
-		if (msg.code == "LogIn" && !logged)
+		if (msg.code == MSGCODE::LogIn && !logged)
 		{
 			char userInput[BUFLEN];
-			printf(msg.message.c_str());
+			printf(msg.message);
 
 			fflush(stdout);
 			memset(userInput, '\0', BUFLEN);
@@ -55,27 +58,35 @@ void RecvThread(SOCKET s, struct sockaddr_in si_other)
 
 			//send the message
 			Message response;
-			response.code = "ClientLogged";
-			response.message = userInput;
+			response.code = MSGCODE::ClientLogged;
+			memcpy(response.message, userInput, BUFLEN);
 			sendto(s, (char*)& response, sizeof(Message), 0, (struct sockaddr*) & si_other, slen);
 			logged = true;
 			playerName = userInput;
 			printf("Wait players to connect...");
 		}
-		if (msg.code == "StartingGame")
+		if (msg.code == MSGCODE::StartingGame)
 		{
-			printf("%s\n", msg.message.c_str());
+			printf("%s\n", msg.message);
+			game.showBoard(msg.board);
 		}
-		if (msg.code == "Chat")
+		if (msg.code == MSGCODE::Chat)
 		{
-			printf("%s\n", msg.message.c_str());
-			//std::cout << msg.message << std::endl;
-			//puts(msg.message.c_str());
+			std::cout << msg.message << std::endl;
 		}
-		if (msg.code == "MoveMade")
+		if (msg.code == MSGCODE::MoveMade)
 		{
 			game.showBoard(msg.board);
-			//printf("%s\n", msg.message.c_str());
+			printf("%s\n", msg.message);
+		}
+		if (msg.code == MSGCODE::EndGameStatus)
+		{
+			game.showBoard(msg.board);
+			printf("%s\n", msg.message);
+		}
+		if(msg.code == MSGCODE::Other)
+		{
+			printf("%s\n", msg.message);
 		}
 	}
 }
@@ -88,13 +99,13 @@ int main(void)
     WSADATA wsa;
  
     //Initialise winsock
-    printf("\nInitialising Winsock...");
+    //printf("\nInitialising Winsock...");
     if (WSAStartup(MAKEWORD(2,2),&wsa) != 0)
     {
         printf("Failed. Error Code : %d",WSAGetLastError());
         exit(EXIT_FAILURE);
     }
-    printf("Initialised.\n");
+    //printf("Initialised.\n");
      
     //create socket
     if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR)
@@ -109,8 +120,11 @@ int main(void)
     si_other.sin_port = htons(PORT);
     si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
 
+	game.showInstructions();
+
+	//first login message
 	Message msg;
-	msg.code = "LogIn";
+	msg.code = MSGCODE::LogIn;
 	if (sendto(s, (char*)&msg, sizeof(Message), 0, (struct sockaddr*)&si_other, slen) == SOCKET_ERROR)
 	{
 		printf("sendto() failed with error code : %d", WSAGetLastError());
@@ -120,8 +134,6 @@ int main(void)
 	//Move recive funcion to another thread, so it is not blockable
 	//and keep the send one in the current thread
 	std::thread recv(RecvThread, s, si_other);
-
-	game.showInstructions();
 
     //start communication
     while(1)
@@ -136,14 +148,16 @@ int main(void)
 			Message msg;
 			if (std::atoi(message) >= 1 && std::atoi(message) <= 9)
 			{
-				msg.code = "Move";
+				msg.code = MSGCODE::Move;
 				msg.move = std::atoi(message);
 			}
 			else
 			{
+				msg.code = MSGCODE::Chat;
+				std::stringstream ss;
+				ss << playerName << ": " << message;
+				memcpy(msg.message, ss.str().c_str(), sizeof(ss));
 				std::cout << playerName << ": " << message << std::endl;
-				msg.code = "Chat";
-				msg.message = message;
 			}
 
 			//send the message

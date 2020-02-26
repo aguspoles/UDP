@@ -12,10 +12,6 @@ void GameServer::Run()
 		printf("Waiting for data...\n");
 		fflush(stdout);
 
-		//clear the buffer by filling null, it might have previously received data
-		memset(&msg.message, '\0', BUFLEN);
-		memset(&msg.code, '\0', BUFLEN);
-
 		//try to receive some data, this is a blocking call
 		recvfrom(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & si_other, &slen);
 
@@ -23,7 +19,7 @@ void GameServer::Run()
 
 		//print details of the client/peer and the data received
 		printf("Received packet from %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
-		printf("Operation: %s\n", msg.code.c_str());
+		printf("Operation: %d\n", msg.code);
 	}
 
 	this->Destroy();
@@ -72,22 +68,22 @@ void GameServer::Destroy()
 
 void GameServer::ReciveMessage(Message m)
 {
-	if (m.code == "LogIn")
+	if (m.code == MSGCODE::LogIn)
 	{
 		LogInPlayer();
 		return;
 	}
-	if (m.code == "Chat")
+	if (m.code == MSGCODE::Chat)
 	{
 		Chat(m);
 		return;
 	}
-	if (m.code == "ClientLogged")
+	if (m.code == MSGCODE::ClientLogged)
 	{
 		ClientLogged(m);	
 		return;
 	}
-	if (m.code == "Move")
+	if (m.code == MSGCODE::Move)
 	{
 		Move(m);
 		return;
@@ -96,21 +92,43 @@ void GameServer::ReciveMessage(Message m)
 
 void GameServer::StartGame()
 {
-	Message msg;
-	msg.code = "StartingGame";
-	msg.message = "Starting...";
-	//now reply the client with the same data
-	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player1, slen);
-	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player2, slen);
+	for (TicTacToe& var : games)
+	{
+		if (var.player1.sin_port == si_other.sin_port || var.player2.sin_port == si_other.sin_port)
+		{
+			var.initialise();
+			Message msg;
+			msg.code = MSGCODE::StartingGame;
+			memcpy(msg.message, "Starting...", sizeof("Starting..."));
+			for (size_t i = 0; i < 3; i++)
+			{
+				for (size_t j = 0; j < 3; j++)
+				{
+					msg.board[i][j] = games.back().board[i][j];
+				}
+			}
+			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player1, slen);
+			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & games.back().player2, slen);
+			SendIsYourTurn(&var);
+			break;
+		}
+	}
+
 }
 
-void GameServer::SendMove(int move, char board[3][3], struct sockaddr_in player)
+void GameServer::SendMove(int player, int move, char board[3][3], TicTacToe* game)
 {
 	std::stringstream ss;
-	ss << "PLAYER1 has put a " << PLAYER1MOVE << " in cell " << move;
+	if (player == PLAYER1)
+	{
+		ss << game->player1Name << " has put a " << PLAYER1MOVE << " in cell " << move;
+	}
+	else
+		ss << game->player2Name << " has put a " << PLAYER2MOVE << " in cell " << move;
+
 	Message reply;
-	reply.code = "MoveMade";
-	reply.message = ss.str();
+	reply.code = MSGCODE::MoveMade;
+	memcpy(reply.message, ss.str().c_str(), sizeof(ss));
 	reply.move = move;
 	for (size_t i = 0; i < 3; i++)
 	{
@@ -119,8 +137,62 @@ void GameServer::SendMove(int move, char board[3][3], struct sockaddr_in player)
 			reply.board[i][j] = board[i][j];
 		}
 	}
-	sendto(s, (char*)& reply, sizeof(Message), 0, (struct sockaddr*) & si_other, slen);
-	//sendto(s, (char*)& reply, sizeof(Message), 0, (struct sockaddr*) & player, slen);
+	sendto(s, (char*)& reply, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+	sendto(s, (char*)& reply, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+}
+
+void GameServer::SendEndGameStatus(std::string status, TicTacToe* game)
+{
+	Message msg;
+	msg.code = MSGCODE::EndGameStatus;
+	memcpy(msg.message, status.c_str(), sizeof(status));
+	for (size_t i = 0; i < 3; i++)
+	{
+		for (size_t j = 0; j < 3; j++)
+		{
+			msg.board[i][j] = game->board[i][j];
+		}
+	}
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+}
+
+void GameServer::SendWaitForYouTurn(std::string status, TicTacToe* game)
+{
+	Message msg;
+	msg.code = MSGCODE::Other;
+	memcpy(msg.message, status.c_str(), sizeof(status));
+	if(game->currentTurn == PLAYER1)
+		sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+	else
+		sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+}
+
+void GameServer::SendInvalidMove(std::string status, TicTacToe* game)
+{
+	Message msg;
+	msg.code = MSGCODE::Other;
+	memcpy(msg.message, status.c_str(), sizeof(status));
+	if (game->currentTurn == PLAYER1)
+		sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+	else
+		sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
+}
+
+void GameServer::SendIsYourTurn(TicTacToe* game)
+{
+	std::stringstream ss;
+	ss << "It is ";
+	if (game->currentTurn == PLAYER1)
+		ss << game->player1Name << " turn";
+	else
+		ss << game->player2Name << " turn";
+
+	Message msg;
+	msg.code = MSGCODE::Other;
+	memcpy(msg.message, ss.str().c_str(), sizeof(ss));
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player1, slen);
+	sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & game->player2, slen);
 }
 
 void GameServer::LogInPlayer()
@@ -131,14 +203,15 @@ void GameServer::LogInPlayer()
 	playersPorts.push_back(si_other.sin_port);
 
 	Message reply;
-	reply.code = "LogIn";
-	reply.message = "UserName: ";
+	reply.code = MSGCODE::LogIn;
+	std::string text = "Login to play, pick your user name: ";
+	memcpy(reply.message, text.c_str(), sizeof(text));
 	sendto(s, (char*)&reply, sizeof(Message), 0, (struct sockaddr*) & si_other, slen);
 }
 
 void GameServer::ClientLogged(Message m)
 {
-	printf("Client %s logged\n", m.message.c_str());
+	printf("Client %s logged\n", m.message);
 	if (games.size() == 0)
 	{
 		TicTacToe game;
@@ -169,21 +242,16 @@ void GameServer::ClientLogged(Message m)
 
 void GameServer::Chat(Message msg)
 {
+	//Simple redirect the message
 	for(TicTacToe var : games)
 	{
 		if (var.player1.sin_port == si_other.sin_port)
 		{
-			std::stringstream ss;
-			ss << var.player1Name << ": " << msg.message;
-			msg.message = ss.str();
 			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & var.player2, slen);
 			break;
 		}
 		if (var.player2.sin_port == si_other.sin_port)
 		{
-			std::stringstream ss;
-			ss << var.player2Name << ": " << msg.message;
-			msg.message = ss.str();
 			sendto(s, (char*)& msg, sizeof(Message), 0, (struct sockaddr*) & var.player1, slen);
 			break;
 		}
@@ -192,7 +260,7 @@ void GameServer::Chat(Message msg)
 
 void GameServer::Move(Message m)
 {
-	for (TicTacToe var : games)
+	for (TicTacToe& var : games)
 	{
 		if (var.player1.sin_port == si_other.sin_port)
 		{

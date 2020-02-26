@@ -13,16 +13,19 @@
 
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 
-#define BUFLEN 512  //Max length of buffer
+#define BUFLEN 1024  //Max length of buffer
 #define PORT 8888   //The port on which to listen for incoming data
+enum class MSGCODE : int32_t { LogIn = 1, StartingGame, Chat, MoveMade, EndGameStatus, Other, ClientLogged, Move };
 
 struct Message {
-	std::string code;
-	std::string message;
+	Message()
+	{
+		ZeroMemory(message, BUFLEN);
+	}
+	MSGCODE code;
+	char message[BUFLEN];
 	int move;
 	char board[3][3];
-	struct sockaddr_in from;
-	struct sockaddr_in to;
 };
 
 class GameServer
@@ -36,9 +39,13 @@ private:
 
 	//SendMessages
 	void StartGame();
-	void SendMove(int move, char board[3][3], struct sockaddr_in player1);
+	void SendMove(int player, int move, char board[3][3], TicTacToe* game);
+	void SendEndGameStatus(std::string status, TicTacToe* game);
+	void SendWaitForYouTurn(std::string status, TicTacToe* game);
+	void SendInvalidMove(std::string status, TicTacToe* game);
+	void SendIsYourTurn(TicTacToe* game);
 
-	//reciveMessages
+	//ReciveMessages
 	void LogInPlayer();
 	void ClientLogged(Message m);
 	void Chat(Message m);

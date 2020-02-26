@@ -5,53 +5,58 @@
 void TicTacToe::playTicTacToe(int whoseTurn, int moveIndex)
 {
 	if (currentTurn != whoseTurn)
+	{
+		server->SendWaitForYouTurn("Wait for your turn!", this);
 		return;
-	// A 3*3 Tic-Tac-Toe board for playing  
-	char board[SIDE][SIDE];
-
-	int moves[SIDE * SIDE];
-
-	// Initialise the game 
-	initialise(board, moves);
+	}
+	else if (!ValidMove(moveIndex))
+	{
+		server->SendInvalidMove("Invalid move!", this);
+		return;
+	}
 
 	int x, y;
 
 	// Keep playing till the game is over or it is a draw 
-	if (gameOver(board) == false &&
-		moveIndex != SIDE * SIDE)
+	if (gameOver(board) == false && totalMovesDone != SIDE * SIDE)
 	{
 		if (whoseTurn == PLAYER1)
 		{
-			x = moves[moveIndex] / SIDE;
-			y = moves[moveIndex] % SIDE;
+			x = moves[moveIndex - 1] / SIDE;
+			y = moves[moveIndex - 1] % SIDE;
 			board[x][y] = PLAYER1MOVE;
 
-			server->SendMove(moves[moveIndex] + 1, board, player1);
+			server->SendMove(PLAYER1, moveIndex, board, this);
 			
-			moveIndex++;
 			whoseTurn = PLAYER2;
 			currentTurn = PLAYER2;
+			totalMovesDone++;
+
+			server->SendIsYourTurn(this);
 		}
 
 		else if (whoseTurn == PLAYER2)
 		{
-			x = moves[moveIndex] / SIDE;
-			y = moves[moveIndex] % SIDE;
+			x = moves[moveIndex - 1] / SIDE;
+			y = moves[moveIndex - 1] % SIDE;
 			board[x][y] = PLAYER2MOVE;
 
-			server->SendMove(moves[moveIndex] + 1, board, player2);
+			server->SendMove(PLAYER2, moves[moveIndex], board, this);
 
-			moveIndex++;
 			whoseTurn = PLAYER1;
 			currentTurn = PLAYER1;
+			totalMovesDone++;
+
+			server->SendIsYourTurn(this);
 		}
+
 	}
 
 	// If the game has drawn 
-	/*if (gameOver(board) == false &&
-		moveIndex == SIDE * SIDE)
-		printf("It's a draw\n");
-	else
+	if (gameOver(board) == false &&
+		totalMovesDone == SIDE * SIDE)
+		server->SendEndGameStatus("It's a draw", this);
+	else if(gameOver(board))
 	{
 		// Toggling the user to declare the actual 
 		// winner 
@@ -62,16 +67,12 @@ void TicTacToe::playTicTacToe(int whoseTurn, int moveIndex)
 
 		// Declare the winner 
 		declareWinner(whoseTurn);
-	}*/
+	}
 	return;
 }
 
-void TicTacToe::initialise(char board[][SIDE], int moves[])
+void TicTacToe::initialise()
 {
-	// Initiate the random number generator so that  
-		// the same configuration doesn't arises 
-	//srand(time(NULL));
-
 	// Initially the board is empty 
 	for (int i = 0; i < SIDE; i++)
 	{
@@ -87,10 +88,12 @@ void TicTacToe::initialise(char board[][SIDE], int moves[])
 
 void TicTacToe::declareWinner(int whoseTurn)
 {
+	std::stringstream ss;
 	if (whoseTurn == PLAYER1)
-		printf("PLAYER1 has won\n");
+		ss << "Player " << player1Name << " won!!!";
 	else
-		printf("PLAYER2 has won\n");
+		ss << "Player " << player2Name << " won!!!";
+	server->SendEndGameStatus(ss.str(), this);
 	return;
 }
 
@@ -137,4 +140,13 @@ bool TicTacToe::gameOver(char board[][SIDE])
 {
 	return(rowCrossed(board) || columnCrossed(board)
 		|| diagonalCrossed(board));
+}
+
+bool TicTacToe::ValidMove(int move)
+{
+	int x = moves[move - 1] / SIDE;
+	int y = moves[move - 1] % SIDE;
+	if (board[x][y] != ' ')
+		return false;
+	return true;
 }

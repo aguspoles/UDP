@@ -29,12 +29,16 @@ public:
 	struct sockaddr_in player1, player2;
 	std::string player1Name, player2Name;
 	bool readyToplay = false;
+	int currentTurn = PLAYER1;
+	// A 3*3 Tic-Tac-Toe board for playing  
+	char board[SIDE][SIDE];
+	int moves[SIDE * SIDE];
 
 	void SetServer(GameServer* server) { this->server = server; }
 
 	void playTicTacToe(int whoseTurn, int move);
 
-	void initialise(char board[][SIDE], int moves[]);
+	void initialise();
 
 	// A function to declare the winner of the game 
 	void declareWinner(int whoseTurn);
@@ -56,8 +60,9 @@ public:
 	bool gameOver(char board[][SIDE]);
 
 private:
-	int currentTurn = PLAYER1;
+	bool ValidMove(int move);
 
 	GameServer* server;
+	int totalMovesDone = 0;
 };
 

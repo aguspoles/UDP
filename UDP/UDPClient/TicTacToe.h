@@ -1,9 +1,5 @@
 #pragma once
 #include <iostream> 
-#include <algorithm>    // std::random_shuffle
-#include <vector>       // std::vector
-#include <ctime>        // std::time
-#include <cstdlib>      // std::rand, std::srand
 #include<stdio.h>
 using namespace std;
 
